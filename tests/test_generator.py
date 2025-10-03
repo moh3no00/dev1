@@ -1,5 +1,3 @@
-import numpy as np
-
 from ai_song_generator import (
     AISongGenerator,
     CloudWorkspace,
@@ -13,8 +11,9 @@ def test_generate_song_basic():
     generator = AISongGenerator()
     project = generator.generate(style="lofi", duration=5.0, seed=42)
     assert project.genre == "Lo-Fi"
-    assert project.audio.size > 0
-    assert 0.9 <= float(np.max(np.abs(project.audio))) <= 1.0
+    assert len(project.audio) > 0
+    peak = max(abs(sample) for sample in project.audio)
+    assert 0.9 <= peak <= 1.0
 
 
 def test_editor_tempo_adjustment():
@@ -46,7 +45,9 @@ def test_workspace_roundtrip(tmp_path):
     assert saved_path.exists()
     loaded = workspace.load(saved_path)
     assert loaded.title == project.title
-    assert np.allclose(loaded.audio, project.audio)
+    assert len(loaded.audio) == len(project.audio)
+    for a, b in zip(loaded.audio, project.audio):
+        assert abs(a - b) < 1e-6
 
 
 def test_sections_include_layers():

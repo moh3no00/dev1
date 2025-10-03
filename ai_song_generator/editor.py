@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
-
-import numpy as np
+from typing import Iterable, List
 
 from .generator import SongProject
 from .synthesis import render_section
@@ -40,32 +38,54 @@ class SongEditor:
         project.sections = [project.sections[i] for i in order]
         rendered = [render_section(section) for section in project.sections]
         if rendered:
-            combined = np.concatenate(rendered)
-            peak = float(np.max(np.abs(combined))) or 1.0
-            project.audio = (combined / peak).astype(np.float32)
+            combined: List[float] = []
+            for audio in rendered:
+                combined.extend(audio)
+            peak = max((abs(value) for value in combined), default=1.0) or 1.0
+            project.audio = [value / peak for value in combined]
         else:
-            project.audio = np.zeros(0, dtype=np.float32)
+            project.audio = []
         return EditSummary(structure_modified=True)
 
 
-def _time_stretch(audio: np.ndarray, ratio: float) -> np.ndarray:
+def _time_stretch(audio: List[float], ratio: float) -> List[float]:
     if ratio <= 0:
         raise ValueError("Stretch ratio must be positive")
-    if ratio == 1.0 or audio.size == 0:
-        return audio
-    indices = np.arange(0, len(audio), ratio)
-    indices = indices[indices < len(audio)]
-    return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
+    if ratio == 1.0 or not audio:
+        return list(audio)
+    original_length = len(audio)
+    new_length = max(1, int(round(original_length / ratio)))
+    result: List[float] = []
+    for index in range(new_length):
+        position = index * ratio
+        lower = int(position)
+        upper = min(lower + 1, original_length - 1)
+        fraction = position - lower
+        interpolated = (1 - fraction) * audio[lower] + fraction * audio[upper]
+        result.append(float(interpolated))
+    return result
 
 
-def _apply_equalizer(audio: np.ndarray, profile: Iterable[float]) -> np.ndarray:
-    if audio.size == 0:
-        return audio
-    profile = list(profile)
-    if not profile:
+def _apply_equalizer(audio: List[float], profile: Iterable[float]) -> List[float]:
+    if not audio:
+        return list(audio)
+    profile_list = [float(value) for value in profile]
+    if not profile_list:
         raise ValueError("Profile must contain at least one value")
-    spectrum = np.fft.rfft(audio)
-    bins = len(spectrum)
-    eq = np.interp(np.linspace(0, len(profile) - 1, bins), np.arange(len(profile)), profile)
-    adjusted = np.fft.irfft(spectrum * eq)
-    return np.real(adjusted).astype(np.float32)
+    segments = len(profile_list)
+    length = len(audio)
+    result: List[float] = []
+    for index, sample in enumerate(audio):
+        if length == 1:
+            weight_position = 0.0
+        else:
+            weight_position = (index / (length - 1)) * (segments - 1)
+        lower = int(weight_position)
+        upper = min(lower + 1, segments - 1)
+        fraction = weight_position - lower
+        lower_gain = profile_list[lower]
+        upper_gain = profile_list[upper]
+        gain = (1 - fraction) * lower_gain + fraction * upper_gain
+        result.append(float(sample) * gain)
+    peak = max((abs(value) for value in result), default=1.0) or 1.0
+    return [value / peak for value in result]

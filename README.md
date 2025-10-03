@@ -3,7 +3,9 @@
 This repository provides a lightweight, fully offline simulation of the AI song
 creation workflow described in the brief. It includes utilities for
 procedurally generating instrumental tracks, editing them, integrating vocals,
-and storing projects in a cloud-like workspace.
+and storing projects in a cloud-like workspace. The synthesis pipeline is
+implemented with pure Python data structures so the project has zero mandatory
+third-party dependencies.
 
 ## Features
 
@@ -27,7 +29,7 @@ and storing projects in a cloud-like workspace.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt  # installs pytest for local testing
 ```
 
 Generate a song:

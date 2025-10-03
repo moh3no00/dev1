@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from typing import List
 
-import numpy as np
-
 from .generator import SongProject
 from .structures import SongSection
 
@@ -28,7 +26,7 @@ class CloudWorkspace:
                 "tempo": project.tempo,
                 "sections": [section.to_dict() for section in project.sections],
             },
-            "audio": project.audio.tolist(),
+            "audio": [float(sample) for sample in project.audio],
         }
         path = self.root / f"{project.title.replace(' ', '_')}.json"
         path.write_text(json.dumps(payload))
@@ -41,7 +39,7 @@ class CloudWorkspace:
         data = json.loads(Path(path).read_text())
         metadata = data["metadata"]
         sections = [SongSection.from_dict(section) for section in metadata["sections"]]
-        audio = np.array(data["audio"], dtype=np.float32)
+        audio = [float(sample) for sample in data.get("audio", [])]
         return SongProject(
             title=metadata["title"],
             genre=metadata["genre"],

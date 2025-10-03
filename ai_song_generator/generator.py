@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import random
 import wave
+from array import array
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
-
-import numpy as np
 
 from .constants import SAMPLE_RATE
 from .structures import SectionLayer, SongSection
@@ -24,9 +23,11 @@ from .synthesis import render_section
 from .templates import GENRE_TEMPLATES
 
 
-def _normalize(audio: np.ndarray) -> np.ndarray:
-    max_val = np.max(np.abs(audio)) or 1.0
-    return audio / max_val
+def _normalize(audio: List[float]) -> List[float]:
+    peak = max((abs(sample) for sample in audio), default=0.0)
+    if peak == 0:
+        return list(audio)
+    return [float(sample / peak) for sample in audio]
 
 
 @dataclass
@@ -38,7 +39,7 @@ class SongProject:
     mood: str
     tempo: int
     sections: List[SongSection] = field(default_factory=list)
-    audio: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
+    audio: List[float] = field(default_factory=list)
 
     def export(self, path: Path, format: str = "wav") -> Path:
         """Export the song to ``path`` in the requested format."""
@@ -196,25 +197,27 @@ class AISongGenerator:
             layers.append(layer)
         return layers
 
-    def _stitch_sections(self, sections: List[SongSection]) -> np.ndarray:
+    def _stitch_sections(self, sections: List[SongSection]) -> List[float]:
         audio_pieces = []
         for section in sections:
             piece = render_section(section)
-            if piece.size:
+            if piece:
                 audio_pieces.append(piece)
         if not audio_pieces:
-            return np.zeros(0, dtype=np.float32)
-        combined = np.concatenate(audio_pieces)
+            return []
+        combined: List[float] = []
+        for piece in audio_pieces:
+            combined.extend(piece)
         return _normalize(combined)
 
 
-def _write_wav(path: Path, audio: np.ndarray) -> None:
+def _write_wav(path: Path, audio: List[float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(SAMPLE_RATE)
-        pcm = np.int16(audio * 32767)
+        pcm = array("h", (int(max(-1.0, min(1.0, sample)) * 32767) for sample in audio))
         wav_file.writeframes(pcm.tobytes())
 
 
