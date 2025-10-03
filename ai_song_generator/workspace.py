@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import List
 
 import numpy as np
 
-from .generator import SongProject, SongSection
+from .generator import SongProject
+from .structures import SongSection
 
 
 class CloudWorkspace:
@@ -26,7 +26,7 @@ class CloudWorkspace:
                 "genre": project.genre,
                 "mood": project.mood,
                 "tempo": project.tempo,
-                "sections": [asdict(section) for section in project.sections],
+                "sections": [section.to_dict() for section in project.sections],
             },
             "audio": project.audio.tolist(),
         }
@@ -40,7 +40,7 @@ class CloudWorkspace:
     def load(self, path: Path) -> SongProject:
         data = json.loads(Path(path).read_text())
         metadata = data["metadata"]
-        sections = [SongSection(**section) for section in metadata["sections"]]
+        sections = [SongSection.from_dict(section) for section in metadata["sections"]]
         audio = np.array(data["audio"], dtype=np.float32)
         return SongProject(
             title=metadata["title"],

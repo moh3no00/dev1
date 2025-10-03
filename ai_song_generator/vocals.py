@@ -6,7 +6,8 @@ import wave
 from pathlib import Path
 import numpy as np
 
-from .generator import SAMPLE_RATE, SongProject
+from .constants import SAMPLE_RATE
+from .generator import SongProject
 
 
 class VocalIntegration:

@@ -1,6 +1,12 @@
 import numpy as np
 
-from ai_song_generator import AISongGenerator, CloudWorkspace, SongEditor, VocalIntegration
+from ai_song_generator import (
+    AISongGenerator,
+    CloudWorkspace,
+    SectionLayer,
+    SongEditor,
+    VocalIntegration,
+)
 
 
 def test_generate_song_basic():
@@ -41,3 +47,14 @@ def test_workspace_roundtrip(tmp_path):
     loaded = workspace.load(saved_path)
     assert loaded.title == project.title
     assert np.allclose(loaded.audio, project.audio)
+
+
+def test_sections_include_layers():
+    generator = AISongGenerator()
+    project = generator.generate(style="lofi", duration=4.0, seed=5)
+    assert project.sections
+    for section in project.sections:
+        assert section.layers, "expected layered instrumentation"
+        for layer in section.layers:
+            assert isinstance(layer, SectionLayer)
+            assert layer.notes, "layer should contain note data"

@@ -8,11 +8,11 @@ and storing projects in a cloud-like workspace.
 ## Features
 
 - **AI Song Generator** – Combine text prompts or preset styles to produce
-  royalty-free instrumental tracks.
+  royalty-free instrumental tracks with layered instrumentation.
 - **Custom Song Editing** – Modify tempo, instrumentation, and structure through
   the programmatic editor utilities.
 - **Genre & Mood Templates** – Start from curated styles such as lo-fi, pop,
-  cinematic, EDM, jazz, and ambient.
+  cinematic, EDM, jazz, and ambient, each with matching instrument presets.
 - **Vocal Integration** – Generate synthetic vocal melodies from lyrics or blend
   user-provided vocal tracks.
 - **Royalty-Free Downloads** – Export your songs as WAV by default, or MP3 when
@@ -44,6 +44,14 @@ python -m ai_song_generator.cli vocals "dreams in the neon skyline"
 
 Exported files are stored in the `output` directory by default and are safe to
 use in personal or commercial projects thanks to their procedural origin.
+
+### Layered Instrumentation
+
+Every generated section now contains multiple instrument layers (lead, pads,
+bass, percussion, and more) that are rendered through a lightweight additive
+synthesizer. The arrangement data is persisted with each project, allowing you
+to rearrange, remix, or serialize compositions without losing instrumentation
+context.
 
 ## Testing
 

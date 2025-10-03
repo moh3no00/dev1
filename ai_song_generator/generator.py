@@ -10,7 +10,6 @@ augmented with vocals.
 
 from __future__ import annotations
 
-import math
 import random
 import wave
 from dataclasses import dataclass, field
@@ -19,41 +18,15 @@ from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
+from .constants import SAMPLE_RATE
+from .structures import SectionLayer, SongSection
+from .synthesis import render_section
 from .templates import GENRE_TEMPLATES
-
-SAMPLE_RATE = 44_100
 
 
 def _normalize(audio: np.ndarray) -> np.ndarray:
     max_val = np.max(np.abs(audio)) or 1.0
     return audio / max_val
-
-
-def _render_waveform(notes: Iterable[float], duration: float, volume: float = 0.5) -> np.ndarray:
-    notes_list = list(notes)
-    if not notes_list:
-        length = max(1, int(SAMPLE_RATE * duration))
-        return np.zeros(length, dtype=np.float32)
-    note_count = max(len(notes_list), 1)
-    samples_per_note = max(1, int(SAMPLE_RATE * duration / note_count))
-    audio = np.zeros(samples_per_note * note_count, dtype=np.float32)
-    note_duration = duration / note_count
-    for idx, freq in enumerate(notes_list):
-        start = idx * samples_per_note
-        t = np.linspace(0, note_duration, samples_per_note, endpoint=False)
-        waveform = np.sin(2 * math.pi * freq * t)
-        envelope = np.linspace(1.0, 0.05, samples_per_note)
-        audio[start : start + samples_per_note] = waveform * envelope * volume
-    return audio
-
-
-@dataclass
-class SongSection:
-    """Simple representation of a song section."""
-
-    name: str
-    notes: List[float]
-    duration: float
 
 
 @dataclass
@@ -120,8 +93,8 @@ class AISongGenerator:
         mood = mood or template["mood"]
         title = self._derive_title(template, mood, rng)
 
-        sections = self._build_sections(template, duration, rng)
-        audio = self._stitch_sections(sections, tempo)
+        sections = self._build_sections(template, duration, tempo, rng)
+        audio = self._stitch_sections(sections)
 
         return SongProject(title=title, genre=template["genre"], mood=mood, tempo=tempo, sections=sections, audio=audio)
 
@@ -147,30 +120,92 @@ class AISongGenerator:
         noun = rng.choice(nouns)
         return f"{adjective} {noun} ({template['genre']} - {mood})"
 
-    def _build_sections(self, template: Dict, duration: float, rng: random.Random) -> List[SongSection]:
+    def _build_sections(self, template: Dict, duration: float, tempo: int, rng: random.Random) -> List[SongSection]:
         sections: List[SongSection] = []
         remaining = duration
         available_sections = template.get("sections", ["intro", "verse", "chorus", "bridge"])
         scale = template.get("scale", [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88])
+        instrument_presets = template.get("instruments", [])
         while remaining > 0:
             name = rng.choice(available_sections)
             section_duration = min(max(4.0, rng.uniform(6.0, 12.0)), remaining)
             remaining -= section_duration
             notes = [rng.choice(scale) * rng.uniform(0.5, 1.5) for _ in range(rng.randint(4, 8))]
-            sections.append(SongSection(name=name, notes=notes, duration=section_duration))
+            layers = self._build_layers(
+                name,
+                instrument_presets or _default_instruments(scale),
+                section_duration,
+                tempo,
+                scale,
+                rng,
+            )
+            lead_layer = layers[0] if layers else None
+            lead_notes: List[float] = [float(note) for note in (lead_layer.notes if lead_layer else notes)]
+            sections.append(SongSection(name=name, notes=lead_notes, duration=section_duration, layers=layers))
         return sections
 
-    def _stitch_sections(self, sections: List[SongSection], tempo: int) -> np.ndarray:
-        tempo_factor = tempo / 120
+    def _build_layers(
+        self,
+        section_name: str,
+        presets: Iterable[Dict],
+        section_duration: float,
+        tempo: int,
+        scale: List[float],
+        rng: random.Random,
+    ) -> List[SectionLayer]:
+        beat_duration = 60.0 / max(tempo, 1)
+        layers: List[SectionLayer] = []
+        for preset in presets:
+            pattern = list(preset.get("pattern", []))
+            rhythm = list(preset.get("rhythm", []))
+            if not pattern or not rhythm:
+                continue
+            layer_notes: List[Optional[float]] = []
+            layer_durations: List[float] = []
+            elapsed = 0.0
+            step = 0
+            while elapsed + 1e-6 < section_duration:
+                note_index = pattern[step % len(pattern)]
+                beat_length = float(rhythm[step % len(rhythm)])
+                note_duration = max(beat_duration * beat_length, beat_duration * 0.25)
+                if elapsed + note_duration > section_duration:
+                    note_duration = section_duration - elapsed
+                note_value: Optional[float]
+                if note_index is None:
+                    note_value = None
+                else:
+                    scale_index = int(note_index) % len(scale)
+                    octave_shift = preset.get("octave", 0)
+                    note_value = scale[scale_index] * (2 ** octave_shift)
+                layer_notes.append(note_value)
+                layer_durations.append(float(max(note_duration, 1.0 / SAMPLE_RATE)))
+                elapsed += note_duration
+                step += 1
+            if not layer_notes:
+                continue
+            layer = SectionLayer(
+                name=f"{section_name}-{preset.get('name', 'layer')}",
+                notes=layer_notes,
+                durations=layer_durations,
+                waveform=preset.get("waveform", "sine"),
+                volume=float(preset.get("volume", 0.5)),
+                envelope=dict(preset.get("envelope", {"attack": 0.01, "release": 0.3})),
+                seed=rng.randint(0, 2**32 - 1),
+                noise=bool(preset.get("waveform") == "noise"),
+            )
+            layers.append(layer)
+        return layers
+
+    def _stitch_sections(self, sections: List[SongSection]) -> np.ndarray:
         audio_pieces = []
         for section in sections:
-            base_duration = section.duration / tempo_factor
-            piece = _render_waveform(section.notes, base_duration)
-            audio_pieces.append(piece)
-        if audio_pieces:
-            combined = np.concatenate(audio_pieces)
-            return _normalize(combined)
-        return np.zeros(0, dtype=np.float32)
+            piece = render_section(section)
+            if piece.size:
+                audio_pieces.append(piece)
+        if not audio_pieces:
+            return np.zeros(0, dtype=np.float32)
+        combined = np.concatenate(audio_pieces)
+        return _normalize(combined)
 
 
 def _write_wav(path: Path, audio: np.ndarray) -> None:
@@ -181,3 +216,34 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
         wav_file.setframerate(SAMPLE_RATE)
         pcm = np.int16(audio * 32767)
         wav_file.writeframes(pcm.tobytes())
+
+
+def _default_instruments(scale: Iterable[float]) -> List[Dict]:
+    del scale  # Scale is unused but kept for API symmetry.
+    return [
+        {
+            "name": "lead",
+            "waveform": "saw",
+            "pattern": [0, 2, 4, 5],
+            "rhythm": [1, 1, 1, 1],
+            "volume": 0.5,
+            "envelope": {"attack": 0.02, "release": 0.4},
+        },
+        {
+            "name": "bass",
+            "waveform": "square",
+            "pattern": [0, 0, 3, 4],
+            "rhythm": [2, 2, 2, 2],
+            "volume": 0.35,
+            "octave": -1,
+            "envelope": {"attack": 0.01, "release": 0.2},
+        },
+        {
+            "name": "drums",
+            "waveform": "noise",
+            "pattern": [None, None, None, None],
+            "rhythm": [0.5, 0.5, 0.5, 0.5],
+            "volume": 0.25,
+            "envelope": {"attack": 0.005, "release": 0.1},
+        },
+    ]

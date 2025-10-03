@@ -8,6 +8,7 @@ from typing import Iterable
 import numpy as np
 
 from .generator import SongProject
+from .synthesis import render_section
 
 
 @dataclass
@@ -37,7 +38,7 @@ class SongEditor:
         if sorted(order) != list(range(len(project.sections))):
             raise ValueError("Order must reference each section exactly once")
         project.sections = [project.sections[i] for i in order]
-        rendered = [_render_section(section) for section in project.sections]
+        rendered = [render_section(section) for section in project.sections]
         if rendered:
             combined = np.concatenate(rendered)
             peak = float(np.max(np.abs(combined))) or 1.0
@@ -68,9 +69,3 @@ def _apply_equalizer(audio: np.ndarray, profile: Iterable[float]) -> np.ndarray:
     eq = np.interp(np.linspace(0, len(profile) - 1, bins), np.arange(len(profile)), profile)
     adjusted = np.fft.irfft(spectrum * eq)
     return np.real(adjusted).astype(np.float32)
-
-
-def _render_section(section) -> np.ndarray:
-    from .generator import _render_waveform
-
-    return _render_waveform(section.notes, section.duration)
